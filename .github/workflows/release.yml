@@ -25,7 +25,7 @@ jobs:
       - name: build
         run: |
           go mod tidy
-          go ui && go build
+          cd ui && go build
           dir ui
       - name: upload release windows_amd64
         uses: Guerra24/upload-to-release@v1
