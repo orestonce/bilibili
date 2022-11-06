@@ -82,8 +82,6 @@ func main() {
 	button_stopDownload.SetOnClick(func() {
 		bilibili.StopDownload()
 	})
-	//lineEdit_VideoUrl.SetText(`https://www.bilibili.com/video/BV1D64y1Z7Ko/?spm_id_from=333.337.search-card.all.click`)
-	//lineEdit_downloadDir.SetText(`D:\迅雷下载`)
 	wd, _ := os.Getwd()
 	lineEdit_downloadDir.SetText(wd)
 	bilibili.InitPrintFnS(bilibili.PrintFnS{
