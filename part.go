@@ -23,6 +23,36 @@ type DownloadVideoPart_Req struct {
 }
 
 func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, aidPath string, curLength int64, totalLength int64, flvName *string) (err error) {
+	*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d.flv", req.Page, req.Order))
+	info, err := os.Stat(*flvName)
+	if err == nil && info.Size() == req.Size { // 此flv已经下载了
+		return nil
+	}
+
+	downloadingName := filepath.Join(aidPath, fmt.Sprintf("%d_%d.flv.downloading", req.Page, req.Order))
+	var beginSize int64 = 0
+	info, err = os.Stat(downloadingName)
+	if err == nil && info.Size() <= req.Size {
+		beginSize = info.Size() // 正在下载, 还没下载完毕
+	}
+	var file *os.File
+	if beginSize > 0 {
+		file, err = os.OpenFile(downloadingName, os.O_RDWR, 0666)
+	} else {
+		file, err = os.Create(downloadingName)
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if beginSize > 0 {
+		_, err = file.Seek(beginSize, io.SeekStart)
+		if err != nil {
+			return err
+		}
+	}
+
 	const _startUrlTem = "https://api.bilibili.com/x/web-interface/view?aid=%d"
 	referer := fmt.Sprintf(_startUrlTem, req.Aid)
 	for i := int64(1); i <= req.Page; i++ {
@@ -38,35 +68,30 @@ func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, aid
 
 	var taskList []taskItem
 
-	for begin := int64(0); begin < req.Size; begin += splitSize {
+	for begin := beginSize; begin < req.Size; begin += splitSize {
 		end := begin + splitSize - 1
 		if end >= req.Size {
 			end = req.Size - 1
 		}
 		taskList = append(taskList, taskItem{
-			retCh: make(chan taskResult, 1),
+			retCh: make(chan taskResult), // 不缓冲
 			begin: begin,
 			end:   end,
 		})
 	}
-	filename := fmt.Sprintf("%d_%d.flv", req.Page, req.Order)
-	*flvName = filepath.Join(aidPath, filename)
-	info, err := os.Stat(*flvName)
-	if err == nil && info.Size() == req.Size {
-		return nil
-	}
-	file, err := os.Create(*flvName)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
 
 	taskMgr := gopool.NewThreadPool(8)
 	this.speedSetBegin()
 	taskMgr.AddJob(func() {
 		var cur int64
 		for _, task := range taskList {
-			ret := <-task.retCh
+			var ret taskResult
+			select {
+			case <-this.ctx.Done():
+				err = this.ctx.Err()
+				return
+			case ret = <-task.retCh:
+			}
 			if ret.err != nil {
 				err = ret.err
 				this.closeFn()
@@ -93,11 +118,15 @@ func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, aid
 					this.sleepDur(time.Second * time.Duration(i+1))
 					continue
 				}
-				task.retCh <- taskResult{
+				ret := taskResult{
 					content: content,
 					err:     err0,
 				}
-				break
+				select {
+				case <-this.ctx.Done():
+				case task.retCh <- ret:
+				}
+				return
 			}
 		})
 	}
@@ -110,7 +139,11 @@ func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, aid
 	if err != nil {
 		return err
 	}
-	return file.Close()
+	err = file.Close()
+	if err != nil {
+		return err
+	}
+	return os.Rename(downloadingName, *flvName)
 }
 
 type taskItem struct {

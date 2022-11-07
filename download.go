@@ -257,7 +257,6 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		}
 		list = append(list, tmp2)
 	}
-	FnMessage("获取cidL1成功")
 	title = TitleEdit(title)
 
 	var list2 []DownloadVideoPart_Req
@@ -298,6 +297,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		listFlv = append(listFlv, flvOne)
 	}
 	resp.OutMp4File = filepath.Join(this.req.SaveDir, strconv.FormatInt(aid, 10)+"_"+title+".mp4")
+	this.speedSetBegin()
 	err = MergeFlvFileListToSingleMp4(MergeTsFileListToSingleMp4_Req{
 		FlvFileList:    listFlv,
 		OutputMp4:      resp.OutMp4File,
