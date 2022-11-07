@@ -7,6 +7,7 @@
 * https://github.com/orestonce/bilibili/releases
 
 ## TODO
+* [ ] ui上显示下载速度
 * [ ] 探索将单个flv切割为段进行并发下载的方案
 * [ ] 充分利用本地缓存，已下载的就不用重复下了
 
