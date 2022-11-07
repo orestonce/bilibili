@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/gonutz/wui"
 	"github.com/orestonce/bilibili"
 	"os"
@@ -17,7 +16,7 @@ func main() {
 	window.SetFont(windowFont)
 	//window.SetInnerSize(664, 178)
 	window.SetClientSize(664, 178)
-	window.SetTitle("哔哩哔哩下载器")
+	window.SetTitle("哔哩哔哩视频下载器")
 	//window.SetResizable(false)
 
 	label1 := wui.NewLabel()
@@ -56,6 +55,10 @@ func main() {
 	//lineEdit_downloadDir.SetCharacterLimit(2000)
 	window.Add(lineEdit_downloadDir)
 
+	label4 := wui.NewLabel()
+	label4.SetBounds(20, 120, 200, 22)
+	window.Add(label4)
+
 	button_startDownload := wui.NewButton()
 	button_startDownload.SetBounds(410, 130, 80, 25)
 	button_startDownload.SetText("开始下载")
@@ -89,7 +92,7 @@ func main() {
 			wui.MessageBoxError(window, "错误", errMsg)
 		},
 		FnMessage: func(msg string) {
-			fmt.Println("信息", msg)
+			label4.SetText(msg)
 		},
 		FnUpdateProgress: func(d float64) {
 			progressBar1.SetValue(d)

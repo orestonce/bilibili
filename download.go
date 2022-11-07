@@ -5,9 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"os"
@@ -16,14 +14,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 type BilibiliDownloader struct {
-	ctx     context.Context
-	closeFn func()
-	req     BeginDownload_Req
+	ctx              context.Context
+	closeFn          func()
+	req              BeginDownload_Req
+	speedBytesLocker sync.Mutex
+	speedBeginTime   time.Time
+	speedBytesMap    map[time.Time]int64
 }
 
 var gDownloader *BilibiliDownloader
@@ -106,7 +106,8 @@ func BeginDownloadAsync(req BeginDownload_Req) {
 	gRunningThreadCountLocker.Unlock()
 
 	tmp := &BilibiliDownloader{
-		req: req,
+		req:           req,
+		speedBytesMap: map[time.Time]int64{},
 	}
 	tmp.ctx, tmp.closeFn = context.WithCancel(context.Background())
 
@@ -312,93 +313,8 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		resp.ErrMsg = err.Error()
 		return resp
 	}
+	_ = os.Remove(filepath.Join(this.req.SaveDir, "download")) // remove "download" dir if empty
 	return
-}
-
-type DownloadVideoPart_Req struct {
-	UrlApi string
-	Size   int64
-	Title  string
-	Aid    int64
-	Page   int64
-	Cid    int64
-	Part   string
-	Order  int64
-}
-
-func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, aidPath string, curLength int64, totalLength int64, flvName *string) (err error) {
-	const _startUrlTem = "https://api.bilibili.com/x/web-interface/view?aid=%d"
-	referer := fmt.Sprintf(_startUrlTem, req.Aid)
-	for i := int64(1); i <= req.Page; i++ {
-		referer += fmt.Sprintf("/?p=%d", i)
-	}
-	client := http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		req.Header.Set("Referer", referer)
-		return nil
-	}}
-	defer client.CloseIdleConnections()
-
-	request, err := http.NewRequest("GET", req.UrlApi, nil)
-	if err != nil {
-		return err
-	}
-	request = request.WithContext(this.ctx)
-
-	request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:56.0) Gecko/20100101 Firefox/56.0")
-	request.Header.Set("Accept", "*/*")
-	request.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	request.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	request.Header.Set("Range", "bytes=0-")
-	request.Header.Set("Referer", referer)
-	request.Header.Set("Origin", "https://www.bilibili.com")
-	request.Header.Set("Connection", "keep-alive")
-
-	resp, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("错误码： %d", resp.StatusCode)
-	}
-
-	filename := fmt.Sprintf("%d_%d.flv", req.Page, req.Order)
-	*flvName = filepath.Join(aidPath, filename)
-	file, err := os.Create(*flvName)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	r := &Reader{
-		r: resp.Body,
-	}
-	var done int32
-	go func() {
-		for {
-			this.sleepDur(time.Millisecond * 50)
-			if atomic.LoadInt32(&done) == 1 || this.isCancel() {
-				break
-			}
-			cur := r.N()
-			FnUpdateProgress(float64(cur+curLength) / float64(totalLength))
-		}
-	}()
-	err = func() error {
-		_, err = io.Copy(file, r)
-		if err != nil {
-			return err
-		}
-		err = file.Sync()
-		return err
-	}()
-	atomic.StoreInt32(&done, 1)
-	if err != nil {
-		log.Printf("下载失败 aid: %d, cid: %d, title: %s, part: %s", req.Aid, req.Cid, req.Title, req.Part)
-		return err
-	}
-
-	return nil
 }
 
 func (this *BilibiliDownloader) defaultFetcher(url string) (content []byte, err error) {
@@ -436,6 +352,7 @@ func (this *BilibiliDownloader) RunDownload() {
 		return
 	}
 	FnDownloadFinish(resp.OutMp4File)
+	FnMessage("")
 }
 
 type GetVideoInfoList_Resp struct {
@@ -497,6 +414,7 @@ func TitleEdit(title string) string { // will be used when save the title or the
 	title = strings.Replace(title, ">", "", -1)
 	title = strings.Replace(title, "|", "", -1)
 	title = strings.Replace(title, ".", "", -1)
+	title = strings.Replace(title, "~", "", -1)
 
 	return title
 }
