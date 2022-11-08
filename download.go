@@ -255,6 +255,8 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 			resp.ErrMsg = err.Error()
 			return resp
 		}
+		//fmt.Println(tmp2.L1Data.Format)
+		// mp4, flv
 		list = append(list, tmp2)
 	}
 	title = TitleEdit(title)
@@ -273,6 +275,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 				Order:  two.Order,
 				UrlApi: two.URL,
 				Size:   two.Size,
+				Format: one.L1Data.Format,
 			})
 			totalLength += two.Size
 		}
@@ -284,7 +287,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		return resp
 	}
 
-	var listFlv []string
+	var listPart []string
 	var curLength int64
 	for _, one := range list2 {
 		var flvOne string
@@ -294,12 +297,12 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 			return resp
 		}
 		curLength += one.Size
-		listFlv = append(listFlv, flvOne)
+		listPart = append(listPart, flvOne)
 	}
 	resp.OutMp4File = filepath.Join(this.req.SaveDir, strconv.FormatInt(aid, 10)+"_"+title+".mp4")
 	this.speedSetBegin()
-	err = MergeFlvFileListToSingleMp4(MergeTsFileListToSingleMp4_Req{
-		FlvFileList:    listFlv,
+	err = MergeFileListToSingleMp4(MergeFileListToSingleMp4_Req{
+		FileList:       listPart,
 		OutputMp4:      resp.OutMp4File,
 		Ctx:            this.ctx,
 		FlvTotalLength: totalLength,

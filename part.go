@@ -20,16 +20,17 @@ type DownloadVideoPart_Req struct {
 	Cid    int64
 	Part   string
 	Order  int64
+	Format string
 }
 
 func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, aidPath string, curLength int64, totalLength int64, flvName *string) (err error) {
-	*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d.flv", req.Page, req.Order))
+	*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d.%s", req.Page, req.Order, req.Format))
 	info, err := os.Stat(*flvName)
 	if err == nil && info.Size() == req.Size { // 此flv已经下载了
 		return nil
 	}
 
-	downloadingName := filepath.Join(aidPath, fmt.Sprintf("%d_%d.flv.downloading", req.Page, req.Order))
+	downloadingName := *flvName + ".downloading"
 	var beginSize int64 = 0
 	info, err = os.Stat(downloadingName)
 	if err == nil && info.Size() <= req.Size {
@@ -187,7 +188,6 @@ func (this *BilibiliDownloader) downloadRangeToMemory(client *http.Client, refer
 	if err != nil {
 		return nil, err
 	}
-
 	if len(content) != int(end-begin)+1 {
 		return content, fmt.Errorf("downloadRangeToMemory len invalid %d, %d", len(content), end-begin)
 	}
