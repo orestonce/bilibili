@@ -15,4 +15,4 @@
 
 # 参考
 * https://github.com/sodaling/FastestBilibiliDownloader
-* https://github.com/machinebox/progress/blob/master/reader.go
+* https://github.com/yapingcat/gomedia
