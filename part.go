@@ -35,8 +35,12 @@ func (r DownloadVideoPart_Req) GetFormatForExt() string {
 	return r.Format
 }
 
-func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, aidPath string, curLength int64, totalLength int64, flvName *string) (err error) {
-	*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d.%s", req.Page, req.Order, req.GetFormatForExt()))
+func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, onlyOne bool, aidPath string, curLength int64, totalLength int64, flvName *string) (err error) {
+	if onlyOne {
+		*flvName = aidPath + "." + req.GetFormatForExt()
+	} else {
+		*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d_%s.%s", req.Page, req.Order, TitleEdit(req.Title), req.GetFormatForExt()))
+	}
 	info, err := os.Stat(*flvName)
 	if err == nil && info.Size() == req.Size { // 此文件已经下载了
 		return nil

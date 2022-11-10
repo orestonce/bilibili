@@ -255,8 +255,6 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 			resp.ErrMsg = err.Error()
 			return resp
 		}
-		//fmt.Println(tmp2.L1Data.Format)
-		// mp4, flv
 		list = append(list, tmp2)
 	}
 	title = TitleEdit(title)
@@ -281,25 +279,31 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		}
 	}
 
-	aidPath, err := this.GetAidFileDownloadDir(aid, title)
+	aidName := fmt.Sprintf("%d_%s", aid, title)
+	aidPath := filepath.Join(this.req.SaveDir, aidName)
+	if len(list2) > 1 {
+		err = os.MkdirAll(aidPath, 0777)
+		if err != nil {
+			resp.ErrMsg = err.Error()
+			return resp
+		}
+	}
 	if err != nil {
 		resp.ErrMsg = err.Error()
 		return resp
 	}
 
-	var listPart []string
 	var curLength int64
 	for _, one := range list2 {
 		var flvOne string
-		err = this.DownloadVideoPart(one, aidPath, curLength, totalLength, &flvOne)
+		err = this.DownloadVideoPart(one, len(list2) == 1, aidPath, curLength, totalLength, &flvOne)
 		if err != nil {
 			resp.ErrMsg = err.Error()
 			return resp
 		}
 		curLength += one.Size
-		listPart = append(listPart, flvOne)
 	}
-	resp.OutDirName = fmt.Sprintf("%d_%s", aid, title)
+	resp.OutName = aidName
 	return
 }
 
@@ -337,13 +341,13 @@ func (this *BilibiliDownloader) RunDownload() {
 		FnError(resp.ErrMsg)
 		return
 	}
-	FnDownloadFinish(resp.OutDirName)
+	FnDownloadFinish(resp.OutName)
 	FnMessage("")
 }
 
 type GetVideoInfoList_Resp struct {
-	ErrMsg     string
-	OutDirName string
+	ErrMsg  string
+	OutName string
 }
 
 func (this *BilibiliDownloader) isCancel() bool {
@@ -360,15 +364,6 @@ func (this *BilibiliDownloader) sleepDur(duration time.Duration) {
 	case <-time.After(duration):
 	case <-this.ctx.Done():
 	}
-}
-
-func (this *BilibiliDownloader) GetAidFileDownloadDir(aid int64, title string) (fullDirPath string, err error) {
-	fullDirPath = filepath.Join(this.req.SaveDir, fmt.Sprintf("%d_%s", aid, title))
-	err = os.MkdirAll(fullDirPath, 0777)
-	if err != nil {
-		return "", err
-	}
-	return fullDirPath, nil
 }
 
 func GetAppKey(entropy string) (appkey, sec string) {
