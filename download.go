@@ -224,7 +224,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		return resp
 	}
 	title := TitleEdit(tmp.Data.Title)
-	FnMessage("获取视频名成功" + title)
+	FnMessage("视频名: " + title)
 	appKey, sec := GetAppKey(_entropy)
 	var list []videoCid
 	for _, i := range tmp.Data.Pages {
@@ -299,24 +299,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		curLength += one.Size
 		listPart = append(listPart, flvOne)
 	}
-	resp.OutMp4File = filepath.Join(this.req.SaveDir, strconv.FormatInt(aid, 10)+"_"+title+".mp4")
-	this.speedSetBegin()
-	err = MergeFileListToSingleMp4(MergeFileListToSingleMp4_Req{
-		FileList:       listPart,
-		OutputMp4:      resp.OutMp4File,
-		Ctx:            this.ctx,
-		FlvTotalLength: totalLength,
-	})
-	if err != nil {
-		resp.ErrMsg = err.Error()
-		return resp
-	}
-	err = os.RemoveAll(aidPath)
-	if err != nil {
-		resp.ErrMsg = err.Error()
-		return resp
-	}
-	_ = os.Remove(filepath.Join(this.req.SaveDir, "download")) // remove "download" dir if empty
+	resp.OutDirName = fmt.Sprintf("%d_%s", aid, title)
 	return
 }
 
@@ -354,13 +337,13 @@ func (this *BilibiliDownloader) RunDownload() {
 		FnError(resp.ErrMsg)
 		return
 	}
-	FnDownloadFinish(resp.OutMp4File)
+	FnDownloadFinish(resp.OutDirName)
 	FnMessage("")
 }
 
 type GetVideoInfoList_Resp struct {
 	ErrMsg     string
-	OutMp4File string
+	OutDirName string
 }
 
 func (this *BilibiliDownloader) isCancel() bool {
@@ -380,7 +363,7 @@ func (this *BilibiliDownloader) sleepDur(duration time.Duration) {
 }
 
 func (this *BilibiliDownloader) GetAidFileDownloadDir(aid int64, title string) (fullDirPath string, err error) {
-	fullDirPath = filepath.Join(this.req.SaveDir, "download", fmt.Sprintf("%d_%s", aid, title))
+	fullDirPath = filepath.Join(this.req.SaveDir, fmt.Sprintf("%d_%s", aid, title))
 	err = os.MkdirAll(fullDirPath, 0777)
 	if err != nil {
 		return "", err
