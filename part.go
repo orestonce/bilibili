@@ -110,7 +110,7 @@ func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, onl
 
 	pr := &progressReader{
 		r:              resp.Body,
-		curLength:      curLength,
+		curLength:      curLength + beginSize,
 		totalLength:    totalLength,
 		downloader:     this,
 		ticker:         time.NewTicker(time.Millisecond * 100),
