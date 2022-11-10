@@ -39,7 +39,7 @@ func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, onl
 	if onlyOne {
 		*flvName = aidPath + "." + req.GetFormatForExt()
 	} else {
-		*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d_%s.%s", req.Page, req.Order, TitleEdit(req.Title), req.GetFormatForExt()))
+		*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d.%s", req.Page, req.Order, req.GetFormatForExt()))
 	}
 	info, err := os.Stat(*flvName)
 	if err == nil && info.Size() == req.Size { // 此文件已经下载了
