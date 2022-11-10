@@ -2,7 +2,3 @@ github.com/gonutz/w32 v1.0.0 h1:3t1z6ZfkFvirjFYBx9pHeHBuKoN/VBVk9yHb/m2Ll/k=
 github.com/gonutz/w32 v1.0.0/go.mod h1:Rc/YP5K9gv0FW4p6X9qL3E7Y56lfMflEol1fLElfMW4=
 github.com/gonutz/wui v1.0.0 h1:kXv6iHawOtz8g6qK4K29rs8KClHo1yYrrYddHArxpcY=
 github.com/gonutz/wui v1.0.0/go.mod h1:cpEPmIh19mpxkcho2qMHLX16gVteB1aee8g11887kyE=
-github.com/orestonce/gopool v0.0.0-20220508090328-d7d56d45b171 h1:NnOl6HTrhrlTT7aaAybVOtq+fEztGFMoQtegckgwLdk=
-github.com/orestonce/gopool v0.0.0-20220508090328-d7d56d45b171/go.mod h1:MCQUrAPiG9/PTjHJuGqWLasKbIaG6z62KO6kfp90byM=
-github.com/yapingcat/gomedia v0.0.0-20221103144501-afce69604d70 h1:d2ArpI/JZWZSkb8SAIZQ0pIBW31WcZ5d3Lf9sMWguCs=
-github.com/yapingcat/gomedia v0.0.0-20221103144501-afce69604d70/go.mod h1:WSZ59bidJOO40JSJmLqlkBJrjZCtjbKKkygEMfzY/kc=
