@@ -169,36 +169,6 @@ const _paramsTemp = "appkey=%s&cid=%s&otype=json&qn=%s&quality=%s&type="
 const _playApiTemp = "https://interface.bilibili.com/v2/playurl?%s&sign=%s"
 const _quality = "80"
 
-type videoCid struct {
-	Aid    int64
-	Cid    int64
-	Page   int64
-	Part   string
-	UrlApi string
-	L1Data cidL1
-}
-
-type cidL1 struct {
-	From              string   `json:"from"`
-	Result            string   `json:"result"`
-	Quality           int      `json:"quality"`
-	Format            string   `json:"format"`
-	Timelength        int      `json:"timelength"`
-	AcceptFormat      string   `json:"accept_format"`
-	AcceptDescription []string `json:"accept_description"`
-	AcceptQuality     []int    `json:"accept_quality"`
-	VideoCodecid      int      `json:"video_codecid"`
-	VideoProject      bool     `json:"video_project"`
-	SeekParam         string   `json:"seek_param"`
-	SeekType          string   `json:"seek_type"`
-	Durl              []struct {
-		Order  int64  `json:"order"`
-		Length int64  `json:"length"`
-		Size   int64  `json:"size"`
-		URL    string `json:"url"`
-	} `json:"durl"`
-}
-
 func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVideoInfoList_Resp) {
 	contents, err := this.defaultFetcher(fmt.Sprintf(_getCidUrlTemp, aid))
 	if err != nil {
@@ -226,7 +196,38 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 	title := TitleEdit(tmp.Data.Title)
 	FnMessage("视频名: " + title)
 	appKey, sec := GetAppKey(_entropy)
+
+	type cidL1 struct {
+		From              string   `json:"from"`
+		Result            string   `json:"result"`
+		Quality           int      `json:"quality"`
+		Format            string   `json:"format"`
+		Timelength        int      `json:"timelength"`
+		AcceptFormat      string   `json:"accept_format"`
+		AcceptDescription []string `json:"accept_description"`
+		AcceptQuality     []int    `json:"accept_quality"`
+		VideoCodecid      int      `json:"video_codecid"`
+		VideoProject      bool     `json:"video_project"`
+		SeekParam         string   `json:"seek_param"`
+		SeekType          string   `json:"seek_type"`
+		Durl              []struct {
+			Order  int64  `json:"order"`
+			Length int64  `json:"length"`
+			Size   int64  `json:"size"`
+			URL    string `json:"url"`
+		} `json:"durl"`
+	}
+
+	type videoCid struct {
+		Aid    int64
+		Cid    int64
+		Page   int64
+		Part   string
+		UrlApi string
+		L1Data cidL1
+	}
 	var list []videoCid
+
 	for _, i := range tmp.Data.Pages {
 		cid := i.Cid
 		page := i.Page
@@ -259,30 +260,43 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 	}
 	title = TitleEdit(title)
 
-	var list2 []DownloadVideoPart_Req
+	var info VideoInfo
 	var totalLength int64
 
 	for _, one := range list {
 		for _, two := range one.L1Data.Durl {
-			list2 = append(list2, DownloadVideoPart_Req{
-				Title:  title,
-				Aid:    aid,
-				Page:   one.Page,
-				Cid:    one.Cid,
-				Part:   TitleEdit(one.Part),
-				Order:  two.Order,
-				UrlApi: two.URL,
-				Size:   two.Size,
-				Format: one.L1Data.Format,
+			header := make(http.Header)
+			referer := fmt.Sprintf("https://api.bilibili.com/x/web-interface/view?aid=%d", aid)
+			for i := 1; i <= int(one.Page); i++ {
+				referer += fmt.Sprintf("&p=%d", i)
+			}
+			header.Set("User-Agent", "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0")
+			header.Set("Accept", "*/*")
+			header.Set("Accept-Language", "en-US,en;q=0.5")
+			header.Set("Accept-Encoding", "gzip, deflate, br")
+			header.Set("Referer", referer)
+			header.Set("Origin", "https://www.bilibili.com")
+			header.Set("Connection", "keep-alive")
+
+			info.PartList = append(info.PartList, VideoPart{
+				Name:                   fmt.Sprintf("%d_%d.%s", one.Page, two.Order, GetFormatForExt(one.L1Data.Format)),
+				FileExtWithDot:         "." + GetFormatForExt(one.L1Data.Format),
+				DownloadUrl:            two.URL,
+				Header:                 header,
+				IsSupportRangeDownload: true,
+				SizeValue:              two.Size,
 			})
 			totalLength += two.Size
 		}
 	}
+	if len(info.PartList) == 0 {
+		resp.ErrMsg = "获取视频信息失败"
+		return resp
+	}
 
-	aidName := fmt.Sprintf("%d_%s", aid, title)
-	aidPath := filepath.Join(this.req.SaveDir, aidName)
-	if len(list2) > 1 {
-		err = os.MkdirAll(aidPath, 0777)
+	info.Name = fmt.Sprintf("%d_%s", aid, title)
+	if len(info.PartList) > 1 {
+		err = os.MkdirAll(filepath.Join(this.req.SaveDir, info.Name), 0777)
 		if err != nil {
 			resp.ErrMsg = err.Error()
 			return resp
@@ -294,16 +308,19 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 	}
 
 	var curLength int64
-	for _, one := range list2 {
-		var flvOne string
-		err = this.DownloadVideoPart(one, len(list2) == 1, aidPath, curLength, totalLength, &flvOne)
+	for _, one := range info.PartList {
+		outName := filepath.Join(this.req.SaveDir, info.Name, one.Name)
+		if len(info.PartList) == 1 {
+			outName = filepath.Join(this.req.SaveDir, info.Name+one.FileExtWithDot)
+		}
+		err = this.DownloadVideoPart(one, outName, curLength, totalLength)
 		if err != nil {
 			resp.ErrMsg = err.Error()
 			return resp
 		}
-		curLength += one.Size
+		curLength += one.SizeValue
 	}
-	resp.OutName = aidName
+	resp.OutName = info.Name
 	return
 }
 

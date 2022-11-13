@@ -1,55 +1,36 @@
 package bilibili
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-type DownloadVideoPart_Req struct {
-	UrlApi string
-	Size   int64
-	Title  string
-	Aid    int64
-	Page   int64
-	Cid    int64
-	Part   string
-	Order  int64
-	Format string
-}
-
-func (r DownloadVideoPart_Req) GetFormatForExt() string {
-	if strings.HasPrefix(r.Format, "flv") {
-		value := r.Format
+func GetFormatForExt(format string) string {
+	if strings.HasPrefix(format, "flv") {
+		value := format
 		if value != "flv" {
 			value = value + ".flv"
 		}
 		return value
 	}
-	return r.Format
+	return format
 }
 
-func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, onlyOne bool, aidPath string, curLength int64, totalLength int64, flvName *string) (err error) {
-	if onlyOne {
-		*flvName = aidPath + "." + req.GetFormatForExt()
-	} else {
-		*flvName = filepath.Join(aidPath, fmt.Sprintf("%d_%d.%s", req.Page, req.Order, req.GetFormatForExt()))
-	}
-	info, err := os.Stat(*flvName)
-	if err == nil && info.Size() == req.Size { // 此文件已经下载了
+func (this *BilibiliDownloader) DownloadVideoPart(part VideoPart, outputNameFullPath string, curLength int64, totalLength int64) (err error) {
+	info, err := os.Stat(outputNameFullPath)
+	if err == nil && info.Size() == part.SizeValue { // 此文件已经下载了
 		return nil
 	}
 
-	downloadingName := *flvName + ".downloading"
+	downloadingName := outputNameFullPath + ".downloading"
 	var beginSize int64 = 0
 	info, err = os.Stat(downloadingName)
-	if err == nil && info.Size() <= req.Size {
+	if err == nil && info.Size() <= part.SizeValue {
 		beginSize = info.Size() // 正在下载, 还没下载完毕
 	}
 	var file *os.File
@@ -70,32 +51,23 @@ func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, onl
 		}
 	}
 
-	referer := fmt.Sprintf("https://api.bilibili.com/x/web-interface/view?aid=%d", req.Aid)
-	for i := int64(1); i <= req.Page; i++ {
-		referer += fmt.Sprintf("/?p=%d", i)
-	}
+	referer := part.Header.Get("Referer")
 	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		req.Header.Set("Referer", referer)
 		return nil
 	}}
 	defer client.CloseIdleConnections()
 
-	request, err := http.NewRequest(http.MethodGet, req.UrlApi, nil)
+	request, err := http.NewRequest(http.MethodGet, part.DownloadUrl, nil)
 	if err != nil {
 		return err
 	}
 	request = request.WithContext(this.ctx)
-	request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:56.0) Gecko/20100101 Firefox/56.0")
-	request.Header.Set("Accept", "*/*")
-	request.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	request.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	request.Header.Set("Referer", referer)
-	request.Header.Set("Origin", "https://www.bilibili.com")
-	request.Header.Set("Connection", "keep-alive")
+	request.Header = part.Header
 
 	var resp *http.Response
 	var isSingleThread bool
-	if req.Size-beginSize > 4*1024*1024 {
+	if part.SizeValue-beginSize > 4*1024*1024 {
 		resp, err = DoRequestMultThread(client, request, beginSize)
 		isSingleThread = false
 	} else {
@@ -132,7 +104,7 @@ func (this *BilibiliDownloader) DownloadVideoPart(req DownloadVideoPart_Req, onl
 	if err != nil {
 		return err
 	}
-	return os.Rename(downloadingName, *flvName)
+	return os.Rename(downloadingName, outputNameFullPath)
 }
 
 type progressReader struct {

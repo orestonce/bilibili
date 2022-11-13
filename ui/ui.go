@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/gonutz/wui"
 	"github.com/orestonce/bilibili"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -70,9 +72,6 @@ func main() {
 	button_stopDownload.SetText("结束下载")
 	window.Add(button_stopDownload)
 
-	window.SetX(100)
-	window.SetY(100)
-
 	button_downloadDir.SetOnClick(func() {
 		dlg := wui.NewFolderSelectDialog()
 		dlg.SetTitle("下载目录")
@@ -86,7 +85,34 @@ func main() {
 		bilibili.StopDownload()
 	})
 	wd, _ := os.Getwd()
-	lineEdit_downloadDir.SetText(wd)
+
+	home, err := os.UserHomeDir()
+	var cfgFilePath string
+	var curConfig *AppConfig
+	if err == nil {
+		cfgFilePath = filepath.Join(home, ".bilibili.json")
+		content, _ := os.ReadFile(cfgFilePath)
+		if len(content) > 0 {
+			var cfg AppConfig
+			err = json.Unmarshal(content, &cfg)
+			if err == nil {
+				curConfig = &cfg
+			}
+		}
+	}
+	if curConfig == nil {
+		curConfig = &AppConfig{
+			SaveDir: wd,
+			WindowX: 100,
+			WindowY: 100,
+		}
+	}
+
+	lineEdit_VideoUrl.SetText(curConfig.VideoUrl)
+	lineEdit_downloadDir.SetText(curConfig.SaveDir)
+	window.SetX(curConfig.WindowX)
+	window.SetY(curConfig.WindowY)
+
 	bilibili.InitPrintFnS(bilibili.PrintFnS{
 		FnError: func(errMsg string) {
 			wui.MessageBoxError(window, "错误", errMsg)
@@ -112,6 +138,11 @@ func main() {
 		},
 	})
 	button_startDownload.SetOnClick(func() {
+		curConfig.WindowX = window.X()
+		curConfig.WindowY = window.Y()
+		curConfig.VideoUrl = lineEdit_VideoUrl.Text()
+		curConfig.SaveDir = lineEdit_downloadDir.Text()
+		saveAppConfig(cfgFilePath, curConfig)
 		bilibili.BeginDownloadAsync(bilibili.BeginDownload_Req{
 			Url:     lineEdit_VideoUrl.Text(),
 			SaveDir: lineEdit_downloadDir.Text(),
@@ -119,4 +150,25 @@ func main() {
 	})
 
 	window.Show()
+}
+
+func saveAppConfig(cfgFilePath string, cfg *AppConfig) {
+	if cfgFilePath == "" {
+		return
+	}
+	data, err := json.MarshalIndent(cfg, "", "    ")
+	if err != nil {
+		return
+	}
+	err = os.WriteFile(cfgFilePath, data, 0600)
+	if err != nil {
+		return
+	}
+}
+
+type AppConfig struct {
+	VideoUrl string
+	SaveDir  string
+	WindowX  int
+	WindowY  int
 }
