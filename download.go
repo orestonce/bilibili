@@ -140,6 +140,8 @@ func (this *BilibiliDownloader) GetVideoInfoListV2(urlInput string) (resp GetVid
 	} else if params = regexp.MustCompile(`/?(av\d+)/?`).FindStringSubmatch(urlInput); len(params) > 0 {
 		aid, _ := strconv.ParseInt(strings.TrimPrefix(params[1], "av"), 10, 64)
 		return this.getVideoInfoList_ByAidV2(aid)
+	} else if params = regexp.MustCompile(`https://www.douyin.com/video/(\d+)`).FindStringSubmatch(urlInput); len(params) > 0 {
+		return this.getVideoListDouYin(params[1])
 	}
 	resp.ErrMsg = "您输入的网址无法解析"
 	return resp
@@ -270,7 +272,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 			for i := 1; i <= int(one.Page); i++ {
 				referer += fmt.Sprintf("&p=%d", i)
 			}
-			header.Set("User-Agent", "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0")
+			header.Set("User-Agent", userAgent)
 			header.Set("Accept", "*/*")
 			header.Set("Accept-Language", "en-US,en;q=0.5")
 			header.Set("Accept-Encoding", "gzip, deflate, br")
@@ -279,12 +281,12 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 			header.Set("Connection", "keep-alive")
 
 			info.PartList = append(info.PartList, VideoPart{
-				Name:                   fmt.Sprintf("%d_%d.%s", one.Page, two.Order, GetFormatForExt(one.L1Data.Format)),
-				FileExtWithDot:         "." + GetFormatForExt(one.L1Data.Format),
-				DownloadUrl:            two.URL,
-				Header:                 header,
-				IsSupportRangeDownload: true,
-				SizeValue:              two.Size,
+				Name:           fmt.Sprintf("%d_%d.%s", one.Page, two.Order, GetFormatForExt(one.L1Data.Format)),
+				FileExtWithDot: "." + GetFormatForExt(one.L1Data.Format),
+				DownloadUrl:    two.URL,
+				Header:         header,
+				HasSize:        true,
+				SizeValue:      two.Size,
 			})
 			totalLength += two.Size
 		}
@@ -295,17 +297,43 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 	}
 
 	info.Name = fmt.Sprintf("%d_%s", aid, title)
+
+	return this.DownloadVideo(info)
+}
+
+func (this *BilibiliDownloader) DownloadVideo(info VideoInfo) (resp GetVideoInfoList_Resp) {
 	if len(info.PartList) > 1 {
-		err = os.MkdirAll(filepath.Join(this.req.SaveDir, info.Name), 0777)
+		err := os.MkdirAll(filepath.Join(this.req.SaveDir, info.Name), 0777)
 		if err != nil {
 			resp.ErrMsg = err.Error()
 			return resp
 		}
 	}
-	if err != nil {
-		resp.ErrMsg = err.Error()
-		return resp
+	for idx, one := range info.PartList {
+		if one.HasSize {
+			continue
+		}
+		httpReq, err := http.NewRequest(http.MethodGet, one.DownloadUrl, nil)
+		if err != nil {
+			resp.ErrMsg = err.Error()
+			return resp
+		}
+		httpResp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			resp.ErrMsg = err.Error()
+			return resp
+		}
+		httpResp.Body.Close()
+		i, err := strconv.ParseInt(httpResp.Header.Get("Content-Length"), 10, 64)
+		if err != nil {
+			resp.ErrMsg = err.Error()
+			return resp
+		}
+		one.HasSize = true
+		one.SizeValue = i
+		info.PartList[idx] = one
 	}
+	totalLength := info.GetTotalLength()
 
 	var curLength int64
 	for _, one := range info.PartList {
@@ -313,7 +341,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		if len(info.PartList) == 1 {
 			outName = filepath.Join(this.req.SaveDir, info.Name+one.FileExtWithDot)
 		}
-		err = this.DownloadVideoPart(one, outName, curLength, totalLength)
+		err := this.DownloadVideoPart(one, outName, curLength, totalLength)
 		if err != nil {
 			resp.ErrMsg = err.Error()
 			return resp
@@ -321,7 +349,7 @@ func (this *BilibiliDownloader) getVideoInfoList_ByAidV2(aid int64) (resp GetVid
 		curLength += one.SizeValue
 	}
 	resp.OutName = info.Name
-	return
+	return resp
 }
 
 func (this *BilibiliDownloader) defaultFetcher(url string) (content []byte, err error) {
@@ -383,6 +411,59 @@ func (this *BilibiliDownloader) sleepDur(duration time.Duration) {
 	}
 }
 
+func (this *BilibiliDownloader) getVideoListDouYin(vid string) (resp GetVideoInfoList_Resp) {
+	content, err := this.defaultFetcher(`https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=` + vid)
+	if err != nil {
+		resp.ErrMsg = err.Error()
+		return resp
+	}
+	var tmp struct {
+		ItemList []struct {
+			Desc  string `json:"desc"`
+			Video struct {
+				PlayAddr struct {
+					URI     string   `json:"uri"`
+					URLList []string `json:"url_list"`
+				} `json:"play_addr"`
+				Vid string `json:"vid"`
+			} `json:"video"`
+		} `json:"item_list"`
+		StatusCode int `json:"status_code"`
+	}
+	err = json.Unmarshal(content, &tmp)
+	if err != nil {
+		resp.ErrMsg = err.Error()
+		return resp
+	}
+	var urlStr string
+	if len(tmp.ItemList) > 0 && len(tmp.ItemList[0].Video.PlayAddr.URLList) > 0 {
+		urlStr = tmp.ItemList[0].Video.PlayAddr.URLList[0]
+		urlStr = strings.Replace(urlStr, "playwm", "play", 1)
+	} else {
+		resp.ErrMsg = "无法解析视频"
+		return resp
+	}
+	title := TitleEdit(tmp.ItemList[0].Desc)
+
+	info := VideoInfo{
+		Name: title,
+		PartList: []VideoPart{
+			{
+				Name:           title,
+				FileExtWithDot: ".mp4",
+				DownloadUrl:    urlStr,
+				Header: map[string][]string{
+					"User-Agent": {"Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0"},
+				},
+				HasSize: false,
+			},
+		},
+	}
+	return this.DownloadVideo(info)
+}
+
+const userAgent = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0"
+
 func GetAppKey(entropy string) (appkey, sec string) {
 	revEntropy := ReverseRunes([]rune(entropy))
 	for i := range revEntropy {
@@ -413,6 +494,7 @@ func TitleEdit(title string) string { // will be used when save the title or the
 	title = strings.Replace(title, "|", "", -1)
 	title = strings.Replace(title, ".", "", -1)
 	title = strings.Replace(title, "~", "", -1)
+	title = strings.Replace(title, "\n", "", -1)
 
 	return title
 }
